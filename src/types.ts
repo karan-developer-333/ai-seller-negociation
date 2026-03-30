@@ -14,6 +14,8 @@ export type NegotiationState = {
   isGameOver: boolean;
   history: Message[];
   product: Product;
+  pendingDealPrice?: number;
+  showDealPopup?: boolean;
 };
 
 export type Product = {

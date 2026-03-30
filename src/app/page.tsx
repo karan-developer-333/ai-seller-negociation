@@ -82,6 +82,8 @@ export default function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [userId, setUserId] = useState<string>('');
   const [isMobile, setIsMobile] = useState(false);
+  const [showDealPopup, setShowDealPopup] = useState(false);
+  const [pendingDealPrice, setPendingDealPrice] = useState<number>(0);
   
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -112,7 +114,7 @@ export default function App() {
   const parseMetadata = React.useCallback((text: string) => {
     let mood = 'neutral';
     let price = state.currentPrice;
-    let isDealAccepted = false;
+    let isDealProposed = false;
     
     const lines = text.split('\n');
     let verbalResponse = text;
@@ -133,7 +135,7 @@ export default function App() {
       
       const dealMatch = line.match(/DEAL:\s*(true|false)/i);
       if (dealMatch && dealMatch[1].toLowerCase() === 'true') {
-        isDealAccepted = true;
+        isDealProposed = true;
       }
     }
     
@@ -164,20 +166,20 @@ export default function App() {
     
     const dealKeywords = ['deal', 'ho gaya', 'hogaya', 'ho gya', 'done', 'final', 'kardo', 'kar do', 'de do', 'dedo', 'lelunga', 'leleta hu', 'ok done', 'accept', 'agree', 'sigh'];
     const hasDealKeyword = dealKeywords.some(kw => verbalResponse.toLowerCase().includes(kw));
-    if (hasDealKeyword && !isDealAccepted) {
+    if (hasDealKeyword && !isDealProposed) {
       const dealContexts = ['deal', 'ho gaya', 'done', 'final', 'accept', 'agree'];
       const positiveContexts = dealContexts.some(c => verbalResponse.toLowerCase().includes(c));
       if (positiveContexts && verbalResponse.length > 30) {
-        isDealAccepted = true;
+        isDealProposed = true;
       }
     }
     
-    if (isDealAccepted && mood === 'neutral') mood = 'happy';
+    if (isDealProposed && mood === 'neutral') mood = 'happy';
     
     return {
       mood,
       price,
-      isDealAccepted,
+      isDealProposed,
       verbalResponse
     };
   }, [state.currentPrice]);
@@ -240,25 +242,26 @@ export default function App() {
         mood: (finalParsed.mood || 'neutral') as 'neutral' | 'surprised' | 'angry' | 'sad' | 'happy' | 'impressed' | 'firm' | 'yielding'
       };
 
-      const isGameOver = finalParsed.isDealAccepted || state.rounds + 1 >= state.maxRounds;
-      
-      if (finalParsed.isDealAccepted) {
-        confetti({
-          particleCount: 150,
-          spread: 70,
-          origin: { y: 0.6 },
-          colors: ['#D4AF37', '#E5E4E2', '#FFFFFF']
-        });
-        saveToLeaderboard(finalParsed.price);
+      if (finalParsed.isDealProposed) {
+        setPendingDealPrice(finalParsed.price);
+        setShowDealPopup(true);
+        setState(prev => ({
+          ...prev,
+          history: [...newHistory, modelMessage],
+          currentPrice: finalParsed.price,
+          rounds: prev.rounds + 1
+        }));
+      } else {
+        const isGameOver = state.rounds + 1 >= state.maxRounds;
+        
+        setState(prev => ({
+          ...prev,
+          history: [...newHistory, modelMessage],
+          currentPrice: finalParsed.price,
+          rounds: prev.rounds + 1,
+          isGameOver
+        }));
       }
-
-      setState(prev => ({
-        ...prev,
-        history: [...newHistory, modelMessage],
-        currentPrice: finalParsed.price,
-        rounds: prev.rounds + 1,
-        isGameOver
-      }));
       setStreamingMessage('');
     } catch (error) {
       console.error('Negotiation error:', error);
@@ -273,6 +276,25 @@ export default function App() {
     setCurrentMood('neutral');
     setInput('');
     setStreamingMessage('');
+    setShowDealPopup(false);
+    setPendingDealPrice(0);
+  };
+
+  const handleDealAccept = () => {
+    confetti({
+      particleCount: 150,
+      spread: 70,
+      origin: { y: 0.6 },
+      colors: ['#D4AF37', '#E5E4E2', '#FFFFFF']
+    });
+    saveToLeaderboard(pendingDealPrice);
+    setState(prev => ({ ...prev, isGameOver: true, currentPrice: pendingDealPrice }));
+    setShowDealPopup(false);
+  };
+
+  const handleDealReject = () => {
+    setShowDealPopup(false);
+    setPendingDealPrice(0);
   };
 
   if (!isGameStarted) {
@@ -345,7 +367,7 @@ export default function App() {
               "translate-x-0"
             )}
           >
-            <div className="p-6 space-y-6 flex-1 overflow-y-auto pt-16 md:pt-6">
+            <div className="p-6 space-y-6 flex-1 overflow-y-auto custom-scrollbar pt-16 md:pt-6">
               {!isMobile && (
                 <div className="absolute top-4 right-4">
                   <button onClick={() => setIsSidebarOpen(false)} className="p-2 text-platinum/40 hover:text-white transition-colors">
@@ -431,7 +453,7 @@ export default function App() {
       <div className="flex-1 flex flex-col min-h-0 relative">
         <div 
           ref={scrollRef}
-          className="flex-1 overflow-y-auto p-4 md:p-6 space-y-6 scroll-smooth"
+          className="flex-1 overflow-y-auto p-4 md:p-6 space-y-6 custom-scrollbar scroll-smooth"
         >
           {state.history.map((msg, i) => (
             <motion.div 
@@ -440,7 +462,7 @@ export default function App() {
               animate={{ opacity: 1, x: 0 }}
               className={cn(
                 "flex gap-3 md:gap-4 max-w-2xl",
-                msg.role === 'user' ? "ml-auto flex-row-reverse" : "mr-auto"
+                msg.role === 'user' ? "ml-auto flex-row-reverse" : "mr-auto flex-col"
               )}
             >
               <div className={cn(
@@ -603,6 +625,51 @@ export default function App() {
                 )) : (
                   <div className="text-center py-12 text-platinum/40">No records yet. Be the first to make a deal.</div>
                 )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showDealPopup && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
+          >
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="glass-panel p-6 md:p-8 rounded-2xl max-w-md w-full space-y-6 text-center"
+            >
+              <div className="flex justify-center">
+                <RajeshAvatar mood="happy" className="w-16 h-16" />
+              </div>
+              <div>
+                <h2 className="text-xl md:text-2xl font-bold gold-gradient mb-2">Deal Proposed!</h2>
+                <p className="text-platinum/60 text-sm">Rajesh Bhaiya is ready to finalize the deal</p>
+              </div>
+              <div className="glass-panel p-4 rounded-xl border border-gold/30">
+                <p className="text-[10px] uppercase tracking-widest text-platinum/40 mb-1">Final Price</p>
+                <p className="text-3xl md:text-4xl font-mono font-bold text-gold">₹{pendingDealPrice.toLocaleString()}</p>
+              </div>
+              <p className="text-xs text-platinum/40">Satisfied with this price? Accept the deal or continue negotiating.</p>
+              <div className="flex gap-3">
+                <button 
+                  onClick={handleDealReject}
+                  className="flex-1 py-3 px-4 rounded-lg bg-white/5 border border-white/10 text-platinum hover:bg-white/10 transition-colors font-semibold"
+                >
+                  Reject & Continue
+                </button>
+                <button 
+                  onClick={handleDealAccept}
+                  className="flex-1 btn-gold py-3 px-4 rounded-lg font-semibold"
+                >
+                  Finalize Deal
+                </button>
               </div>
             </motion.div>
           </motion.div>

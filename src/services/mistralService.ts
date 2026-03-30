@@ -43,8 +43,10 @@ PRICE Logic:
 - Decrease: HAR ROUND sirf 10,000-30,000 kam karo MAX
 
 DEAL Rules:
-- DEAL: true Sirf tab Jab buyer clearly "done", "deal", "ok", "lelunga", "final", "kardo" bole
-- Warna hamesha DEAL: false
+- DEAL: true Sirf tab Jab buyer CLEARLY final decision le raha ho - jaise "ok done", "deal ho gaya", "final karo", "kardo", "lelunga" - jab buyer clearly accept karna chahta hai
+- Agar buyer sirf negotiating kar raha hai, lower offer de raha hai, ya baat cheet kar raha hai - toh DEAL: false
+- Matlab agar buyer bol raha hai "can you do 400000" ya "what about 380000" - ye NEGOTIATION hai, DEAL: false
+- Sirf jab buyer bol raha hai "ok", "done", "final", "deal" - tab hi DEAL: true
 
 TEXT Rules:
 - TEXT: ke baad HI baat shuru karo
