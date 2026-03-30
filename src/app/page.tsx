@@ -1,3 +1,5 @@
+"use client";
+
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -14,11 +16,11 @@ import {
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import confetti from 'canvas-confetti';
-import { cn } from './lib/utils';
-import { Message, NegotiationState, Product, LeaderboardEntry } from './types';
-import { getSellerResponseStream } from './services/mistralService';
-import { RajeshAvatar } from './components/RajeshAvatar';
-import { auth, db } from './firebase';
+import { cn } from '../lib/utils';
+import { Message, NegotiationState, Product, LeaderboardEntry } from '../types';
+import { getSellerResponseStream } from '../services/mistralService';
+import { RajeshAvatar } from '../components/RajeshAvatar';
+import { auth, db } from '../firebase';
 import { signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { 
   collection, 
@@ -268,7 +270,7 @@ export default function App() {
   }
 
   return (
-    <div className="h-[100dvh] flex flex-col md:flex-row overflow-hidden bg-obsidian text-platinum">
+    <div className="h-[100vh] flex flex-col md:flex-row bg-obsidian text-platinum">
       {/* Mobile Header */}
       <div className="md:hidden glass-panel border-b border-white/10 p-4 flex items-center justify-between z-30">
         <div className="flex items-center gap-3">
@@ -288,9 +290,9 @@ export default function App() {
 
       {/* Sidebar / Product Info */}
       <AnimatePresence>
-        {(isSidebarOpen || window.innerWidth >= 768) && (
+        {(isSidebarOpen || (typeof window !== 'undefined' ? window.innerWidth >= 768 : true)) && (
           <motion.div 
-            initial={window.innerWidth < 768 ? { x: -320 } : false}
+            initial={(typeof window !== 'undefined' ? window.innerWidth < 768 : false) ? { x: -320 } : false}
             animate={{ x: 0 }}
             exit={{ x: -320 }}
             transition={{ type: 'spring', damping: 25, stiffness: 200 }}
@@ -380,7 +382,7 @@ export default function App() {
       </AnimatePresence>
 
       {/* Main Chat Area */}
-      <div className="flex-1 flex flex-col relative">
+      <div className="flex-1 flex max-h-[90vh] overflow-y-scroll flex-col relative">
         <div 
           ref={scrollRef}
           className="flex-1 overflow-y-auto p-6 space-y-6 scroll-smooth"
