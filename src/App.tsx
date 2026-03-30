@@ -1,0 +1,433 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
+import { 
+  Send, 
+  TrendingDown, 
+  Trophy, 
+  Clock, 
+  Info, 
+  ChevronRight,
+  RefreshCw,
+  User,
+  Bot,
+  AlertCircle
+} from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import confetti from 'canvas-confetti';
+import { cn } from './lib/utils';
+import { Message, NegotiationState, Product, LeaderboardEntry } from './types';
+import { getSellerResponseStream } from './services/geminiService';
+import { JulianAvatar } from './components/JulianAvatar';
+
+const PRODUCT: Product = {
+  id: 'obsidian-chronograph',
+  name: 'The Obsidian Chronograph',
+  description: 'A masterpiece of horological engineering. Features a tourbillon movement, obsidian dial, and a case forged from aerospace-grade titanium. Only 50 units exist globally.',
+  initialPrice: 12000,
+  minPrice: 8500,
+  image: 'https://picsum.photos/seed/watch/800/800'
+};
+
+const INITIAL_STATE: NegotiationState = {
+  currentPrice: PRODUCT.initialPrice,
+  rounds: 0,
+  maxRounds: 10,
+  isGameOver: false,
+  history: [
+    {
+      role: 'model',
+      text: "Welcome to Thorne's Rare Assets. I am Julian. You're looking at the Obsidian Chronograph. A truly exceptional piece. It's currently listed at $12,000. Shall we discuss terms?",
+      price: 12000,
+      mood: 'neutral'
+    }
+  ],
+  product: PRODUCT
+};
+
+export default function App() {
+  const [state, setState] = useState<NegotiationState>(INITIAL_STATE);
+  const [input, setInput] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [streamingMessage, setStreamingMessage] = useState<string>('');
+  const [currentMood, setCurrentMood] = useState<any>('neutral');
+  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
+  const [showLeaderboard, setShowLeaderboard] = useState(false);
+  const [userName, setUserName] = useState('');
+  const [isGameStarted, setIsGameStarted] = useState(false);
+  
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const saved = localStorage.getItem('negotiation-leaderboard');
+    if (saved) setLeaderboard(JSON.parse(saved));
+  }, []);
+
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [state.history, streamingMessage]);
+
+  const parseMetadata = (text: string) => {
+    const moodMatch = text.match(/MOOD:\s*(\w+)/i);
+    const priceMatch = text.match(/PRICE:\s*(\d+)/i);
+    const dealMatch = text.match(/DEAL:\s*(true|false)/i);
+    const textMatch = text.match(/TEXT:\s*([\s\S]*)/i);
+
+    return {
+      mood: moodMatch ? moodMatch[1].toLowerCase() : 'neutral',
+      price: priceMatch ? parseInt(priceMatch[1]) : state.currentPrice,
+      isDealAccepted: dealMatch ? dealMatch[1].toLowerCase() === 'true' : false,
+      verbalResponse: textMatch ? textMatch[1].trim() : ''
+    };
+  };
+
+  const handleSend = async () => {
+    if (!input.trim() || isLoading || state.isGameOver) return;
+
+    const userMessage: Message = { role: 'user', text: input };
+    const newHistory = [...state.history, userMessage];
+    
+    setInput('');
+    setIsLoading(true);
+    setStreamingMessage('');
+    
+    try {
+      const stream = getSellerResponseStream(newHistory, state.product);
+      let accumulated = '';
+      
+      for await (const chunk of stream) {
+        accumulated += chunk;
+        const parsed = parseMetadata(accumulated);
+        
+        // Update mood in real-time as it appears in the stream
+        if (parsed.mood !== currentMood) {
+          setCurrentMood(parsed.mood);
+        }
+        
+        // Only show the verbal part in the streaming message
+        setStreamingMessage(parsed.verbalResponse || '...');
+      }
+
+      const finalParsed = parseMetadata(accumulated);
+      
+      const modelMessage: Message = {
+        role: 'model',
+        text: finalParsed.verbalResponse || accumulated,
+        price: finalParsed.price,
+        mood: finalParsed.mood as any
+      };
+
+      const isGameOver = finalParsed.isDealAccepted || state.rounds + 1 >= state.maxRounds;
+      
+      if (finalParsed.isDealAccepted) {
+        confetti({
+          particleCount: 150,
+          spread: 70,
+          origin: { y: 0.6 },
+          colors: ['#D4AF37', '#E5E4E2', '#FFFFFF']
+        });
+        saveToLeaderboard(finalParsed.price);
+      }
+
+      setState(prev => ({
+        ...prev,
+        history: [...newHistory, modelMessage],
+        currentPrice: finalParsed.price,
+        rounds: prev.rounds + 1,
+        isGameOver
+      }));
+      setStreamingMessage('');
+    } catch (error) {
+      console.error('Negotiation error:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const saveToLeaderboard = (finalPrice: number) => {
+    const entry: LeaderboardEntry = {
+      name: userName || 'Anonymous Negotiator',
+      price: finalPrice,
+      date: new Date().toLocaleDateString()
+    };
+    const newLeaderboard = [...leaderboard, entry]
+      .sort((a, b) => a.price - b.price)
+      .slice(0, 10);
+    setLeaderboard(newLeaderboard);
+    localStorage.setItem('negotiation-leaderboard', JSON.stringify(newLeaderboard));
+  };
+
+  const resetGame = () => {
+    setState(INITIAL_STATE);
+    setIsGameStarted(false);
+    setCurrentMood('neutral');
+  };
+
+  if (!isGameStarted) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4">
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="glass-panel p-8 rounded-2xl max-w-md w-full text-center space-y-6"
+        >
+          <h1 className="text-4xl font-bold gold-gradient">The Art of the Deal</h1>
+          <p className="text-platinum/60">Enter the world of high-stakes negotiation. Can you convince Julian Thorne to part with his treasures for a fraction of their value?</p>
+          
+          <div className="space-y-4">
+            <div className="text-left">
+              <label className="text-xs uppercase tracking-widest text-gold font-semibold mb-2 block">Your Name</label>
+              <input 
+                type="text" 
+                value={userName}
+                onChange={(e) => setUserName(e.target.value)}
+                placeholder="Enter your name..."
+                className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-3 focus:outline-none focus:border-gold transition-colors"
+              />
+            </div>
+            <button 
+              onClick={() => setIsGameStarted(true)}
+              disabled={!userName.trim()}
+              className="w-full btn-gold py-4 rounded-lg flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Begin Negotiation <ChevronRight size={18} />
+            </button>
+          </div>
+        </motion.div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="h-screen flex flex-col md:flex-row overflow-hidden bg-obsidian">
+      {/* Sidebar */}
+      <div className="w-full md:w-80 glass-panel border-r border-white/10 flex flex-col">
+        <div className="p-6 space-y-6 flex-1 overflow-y-auto">
+          <div className="relative group">
+            <div className="aspect-square rounded-xl overflow-hidden border border-white/10">
+              <img src={state.product.image} alt={state.product.name} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" referrerPolicy="no-referrer" />
+            </div>
+            <div className="absolute -bottom-4 -right-4 w-20 h-20">
+              <JulianAvatar mood={currentMood} isThinking={isLoading} className="shadow-2xl" />
+            </div>
+          </div>
+          
+          <div className="pt-4 space-y-2">
+            <h2 className="text-xl font-bold text-gold">{state.product.name}</h2>
+            <p className="text-sm text-platinum/60 leading-relaxed">{state.product.description}</p>
+          </div>
+
+          <div className="glass-panel p-4 rounded-xl border border-white/5 space-y-3">
+            <h3 className="text-[10px] uppercase tracking-widest font-bold text-gold flex items-center gap-2">
+              <Info size={12} /> Negotiation Tactics
+            </h3>
+            <ul className="text-[11px] text-platinum/50 space-y-2 list-disc pl-4">
+              <li>Appeal to Julian's ego or professional pride.</li>
+              <li>Point out potential market fluctuations.</li>
+              <li>Be firm but respectful; Julian dislikes lowballers.</li>
+              <li>Use the remaining rounds to build rapport.</li>
+            </ul>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="glass-panel p-3 rounded-lg border border-white/5">
+              <div className="flex items-center gap-2 text-gold mb-1">
+                <Clock size={14} />
+                <span className="text-[10px] uppercase tracking-wider font-bold">Rounds</span>
+              </div>
+              <div className="text-xl font-mono">{state.rounds}/{state.maxRounds}</div>
+            </div>
+            <div className="glass-panel p-3 rounded-lg border border-white/5">
+              <div className="flex items-center gap-2 text-gold mb-1">
+                <TrendingDown size={14} />
+                <span className="text-[10px] uppercase tracking-wider font-bold">Offer</span>
+              </div>
+              <div className="text-xl font-mono">${state.currentPrice.toLocaleString()}</div>
+            </div>
+          </div>
+        </div>
+
+        <div className="p-4 border-t border-white/10 space-y-2">
+          <button 
+            onClick={() => setShowLeaderboard(true)}
+            className="w-full flex items-center justify-center gap-2 py-2 text-sm text-platinum/60 hover:text-gold transition-colors"
+          >
+            <Trophy size={16} /> Leaderboard
+          </button>
+          <button 
+            onClick={resetGame}
+            className="w-full flex items-center justify-center gap-2 py-2 text-sm text-platinum/60 hover:text-red-400 transition-colors"
+          >
+            <RefreshCw size={16} /> Reset Game
+          </button>
+        </div>
+      </div>
+
+      {/* Main Chat Area */}
+      <div className="flex-1 flex flex-col relative">
+        <div 
+          ref={scrollRef}
+          className="flex-1 overflow-y-auto p-6 space-y-6 scroll-smooth"
+        >
+          {state.history.map((msg, i) => (
+            <motion.div 
+              key={i}
+              initial={{ opacity: 0, x: msg.role === 'user' ? 20 : -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              className={cn(
+                "flex gap-4 max-w-2xl",
+                msg.role === 'user' ? "ml-auto flex-row-reverse" : "mr-auto"
+              )}
+            >
+              <div className={cn(
+                "w-10 h-10 rounded-full flex items-center justify-center shrink-0",
+                msg.role === 'user' ? "bg-white/5 border border-white/10" : ""
+              )}>
+                {msg.role === 'user' ? <User size={18} /> : <JulianAvatar mood={msg.mood || 'neutral'} className="w-10 h-10" />}
+              </div>
+              <div className={cn(
+                "p-4 rounded-2xl space-y-2",
+                msg.role === 'user' ? "bg-white/5 rounded-tr-none" : "glass-panel rounded-tl-none"
+              )}>
+                {msg.role === 'model' && msg.mood && (
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className={cn(
+                      "text-[10px] uppercase tracking-widest px-2 py-0.5 rounded-full border",
+                      msg.mood === 'annoyed' ? "border-red-500/50 text-red-400 bg-red-500/10" :
+                      msg.mood === 'impressed' ? "border-green-500/50 text-green-400 bg-green-500/10" :
+                      msg.mood === 'firm' ? "border-gold/50 text-gold bg-gold/10" :
+                      "border-white/20 text-white/40 bg-white/5"
+                    )}>
+                      {msg.mood}
+                    </span>
+                  </div>
+                )}
+                <div className="prose prose-invert prose-sm">
+                  <ReactMarkdown>{msg.text}</ReactMarkdown>
+                </div>
+                {msg.price && msg.role === 'model' && (
+                  <div className="pt-2 border-t border-white/5 flex items-center justify-between">
+                    <span className="text-[10px] text-platinum/40 uppercase tracking-widest">Current Offer</span>
+                    <span className="text-lg font-mono text-gold">${msg.price.toLocaleString()}</span>
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          ))}
+          
+          {streamingMessage && (
+            <motion.div 
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              className="flex gap-4 max-w-2xl mr-auto"
+            >
+              <JulianAvatar mood={currentMood} className="w-10 h-10" isThinking={true} />
+              <div className="glass-panel p-4 rounded-2xl rounded-tl-none space-y-2">
+                <div className="prose prose-invert prose-sm">
+                  <ReactMarkdown>{streamingMessage}</ReactMarkdown>
+                </div>
+              </div>
+            </motion.div>
+          )}
+
+          {isLoading && !streamingMessage && (
+            <div className="flex gap-4 max-w-2xl">
+              <JulianAvatar mood={currentMood} className="w-10 h-10" isThinking={true} />
+              <div className="glass-panel p-4 rounded-2xl rounded-tl-none animate-pulse">
+                <div className="flex gap-1">
+                  <div className="w-2 h-2 bg-gold/40 rounded-full animate-bounce" />
+                  <div className="w-2 h-2 bg-gold/40 rounded-full animate-bounce [animation-delay:0.2s]" />
+                  <div className="w-2 h-2 bg-gold/40 rounded-full animate-bounce [animation-delay:0.4s]" />
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Input Area */}
+        <div className="p-6 border-t border-white/10 bg-obsidian/50 backdrop-blur-xl">
+          {!state.isGameOver ? (
+            <div className="max-w-4xl mx-auto relative">
+              <input 
+                type="text"
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+                placeholder="Make an offer or appeal to Julian..."
+                className="w-full bg-white/5 border border-white/10 rounded-full px-6 py-4 pr-16 focus:outline-none focus:border-gold transition-all"
+              />
+              <button 
+                onClick={handleSend}
+                disabled={isLoading || !input.trim()}
+                className="absolute right-2 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full btn-gold flex items-center justify-center disabled:opacity-50"
+              >
+                <Send size={20} />
+              </button>
+            </div>
+          ) : (
+            <div className="max-w-4xl mx-auto text-center space-y-4">
+              <div className="flex items-center justify-center gap-2 text-gold">
+                <AlertCircle size={20} />
+                <span className="font-bold uppercase tracking-widest">Negotiation Concluded</span>
+              </div>
+              <button 
+                onClick={resetGame}
+                className="btn-gold px-8 py-3 rounded-full"
+              >
+                Try Again
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Leaderboard Modal */}
+      <AnimatePresence>
+        {showLeaderboard && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
+            onClick={() => setShowLeaderboard(false)}
+          >
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="glass-panel p-8 rounded-2xl max-w-lg w-full space-y-6"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between">
+                <h2 className="text-2xl font-bold gold-gradient flex items-center gap-2">
+                  <Trophy size={24} /> Hall of Fame
+                </h2>
+                <button onClick={() => setShowLeaderboard(false)} className="text-platinum/40 hover:text-white">
+                  ✕
+                </button>
+              </div>
+
+              <div className="space-y-2">
+                {leaderboard.length > 0 ? leaderboard.map((entry, i) => (
+                  <div key={i} className="flex items-center justify-between p-3 rounded-lg bg-white/5 border border-white/5">
+                    <div className="flex items-center gap-4">
+                      <span className="text-gold font-mono w-4">{i + 1}.</span>
+                      <div>
+                        <div className="font-semibold">{entry.name}</div>
+                        <div className="text-[10px] text-platinum/40 uppercase tracking-widest">{entry.date}</div>
+                      </div>
+                    </div>
+                    <div className="text-xl font-mono text-gold">${entry.price.toLocaleString()}</div>
+                  </div>
+                )) : (
+                  <div className="text-center py-12 text-platinum/40">No records yet. Be the first to make a deal.</div>
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
