@@ -27,7 +27,16 @@ export async function POST(req: Request) {
       async start(controller) {
         try {
           for await (const chunk of result) {
-            const content = chunk.data.choices[0].delta.content;
+            let content: string | undefined;
+            
+            if (chunk && typeof chunk === 'object') {
+              if ('choices' in chunk && Array.isArray(chunk.choices)) {
+                content = chunk.choices[0]?.delta?.content;
+              } else if ('data' in chunk && typeof chunk.data === 'object') {
+                content = (chunk.data as any).choices?.[0]?.delta?.content;
+              }
+            }
+            
             if (content) {
               const dataStr = `data: ${JSON.stringify({ content })}\n\n`;
               controller.enqueue(encoder.encode(dataStr));

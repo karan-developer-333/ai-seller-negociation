@@ -1,8 +1,10 @@
+export type Mood = 'neutral' | 'surprised' | 'angry' | 'sad' | 'happy' | 'impressed' | 'firm' | 'yielding';
+
 export type Message = {
   role: 'user' | 'model';
   text: string;
   price?: number;
-  mood?: 'neutral' | 'annoyed' | 'impressed' | 'firm' | 'yielding';
+  mood?: Mood;
 };
 
 export type NegotiationState = {
