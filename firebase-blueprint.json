@@ -1,0 +1,35 @@
+{
+  "entities": {
+    "LeaderboardEntry": {
+      "title": "Leaderboard Entry",
+      "description": "A record of a successful negotiation",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "The name of the negotiator"
+        },
+        "price": {
+          "type": "number",
+          "description": "The final price agreed upon"
+        },
+        "date": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When the deal was made"
+        },
+        "uid": {
+          "type": "string",
+          "description": "The user ID of the negotiator"
+        }
+      },
+      "required": ["name", "price", "date", "uid"]
+    }
+  },
+  "firestore": {
+    "/leaderboard/{entryId}": {
+      "schema": "LeaderboardEntry",
+      "description": "Collection of leaderboard entries"
+    }
+  }
+}

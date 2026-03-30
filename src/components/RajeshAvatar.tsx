@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { motion } from 'motion/react';
 import { cn } from '../lib/utils';
 
@@ -10,7 +10,7 @@ interface RajeshAvatarProps {
   isThinking?: boolean;
 }
 
-export const RajeshAvatar: React.FC<RajeshAvatarProps> = ({ mood, className, isThinking }) => {
+export const RajeshAvatar: React.FC<RajeshAvatarProps> = memo(({ mood, className, isThinking }) => {
   const getMoodColors = () => {
     switch (mood) {
       case 'annoyed': return { primary: '#FF6B6B', secondary: '#4D0000', glow: 'rgba(255, 107, 107, 0.4)', blush: '#FF8787' };
@@ -28,11 +28,11 @@ export const RajeshAvatar: React.FC<RajeshAvatarProps> = ({ mood, className, isT
       <motion.div
         animate={{
           y: [0, -4, 0],
-          scale: isThinking ? [1, 1.05, 1] : 1
+          scale: isThinking ? [1, 1.02, 1] : 1
         }}
         transition={{ 
           y: { repeat: Infinity, duration: 3, ease: "easeInOut" },
-          scale: { repeat: isThinking ? Infinity : 0, duration: 1.5 }
+          scale: { repeat: isThinking ? Infinity : 0, duration: 2 }
         }}
         className="w-full h-full rounded-full overflow-hidden border-4 bg-obsidian"
         style={{ borderColor: colors.primary, boxShadow: `0 0 20px ${colors.glow}` }}
@@ -42,17 +42,15 @@ export const RajeshAvatar: React.FC<RajeshAvatarProps> = ({ mood, className, isT
           <circle cx="50" cy="50" r="45" fill="#1A1A1A" />
           
           {/* Blushing */}
-          <motion.circle 
+          <circle 
             cx="25" cy="60" r="8" 
             fill={colors.blush} 
-            animate={{ opacity: mood === 'impressed' ? 0.6 : 0.2 }}
-            transition={{ duration: 0.5 }}
+            opacity={mood === 'impressed' ? 0.6 : 0.2}
           />
-          <motion.circle 
+          <circle 
             cx="75" cy="60" r="8" 
             fill={colors.blush} 
-            animate={{ opacity: mood === 'impressed' ? 0.6 : 0.2 }}
-            transition={{ duration: 0.5 }}
+            opacity={mood === 'impressed' ? 0.6 : 0.2}
           />
 
           {/* Eyes Container */}
@@ -60,12 +58,10 @@ export const RajeshAvatar: React.FC<RajeshAvatarProps> = ({ mood, className, isT
             {/* Left Eye */}
             <motion.g animate={{ scaleY: [1, 1, 0.1, 1, 1] }} transition={{ repeat: Infinity, duration: 4, times: [0, 0.45, 0.5, 0.55, 1] }}>
               <circle cx="35" cy="45" r="10" fill="white" />
-              <motion.circle 
-                cx="37" cy="43" r="5" fill="black"
-                animate={{ 
-                  x: mood === 'annoyed' ? -2 : mood === 'yielding' ? 2 : 0,
-                  y: mood === 'annoyed' ? -2 : 0
-                }}
+              <circle 
+                cx={37 + (mood === 'annoyed' ? -2 : mood === 'yielding' ? 2 : 0)} 
+                cy={43 + (mood === 'annoyed' ? -2 : 0)} 
+                r="5" fill="black"
               />
               <circle cx="39" cy="40" r="2" fill="white" />
             </motion.g>
@@ -73,19 +69,17 @@ export const RajeshAvatar: React.FC<RajeshAvatarProps> = ({ mood, className, isT
             {/* Right Eye */}
             <motion.g animate={{ scaleY: [1, 1, 0.1, 1, 1] }} transition={{ repeat: Infinity, duration: 4, times: [0, 0.45, 0.5, 0.55, 1] }}>
               <circle cx="65" cy="45" r="10" fill="white" />
-              <motion.circle 
-                cx="63" cy="43" r="5" fill="black"
-                animate={{ 
-                  x: mood === 'annoyed' ? 2 : mood === 'yielding' ? -2 : 0,
-                  y: mood === 'annoyed' ? -2 : 0
-                }}
+              <circle 
+                cx={63 + (mood === 'annoyed' ? 2 : mood === 'yielding' ? -2 : 0)} 
+                cy={43 + (mood === 'annoyed' ? -2 : 0)} 
+                r="5" fill="black"
               />
               <circle cx="61" cy="40" r="2" fill="white" />
             </motion.g>
           </g>
 
           {/* Mouth */}
-          <motion.path
+          <path
             d={mood === 'annoyed' ? "M 40 75 Q 50 65 60 75" : 
                mood === 'impressed' ? "M 35 70 Q 50 85 65 70" :
                mood === 'firm' ? "M 40 72 L 60 72" :
@@ -94,18 +88,14 @@ export const RajeshAvatar: React.FC<RajeshAvatarProps> = ({ mood, className, isT
             strokeWidth="4"
             strokeLinecap="round"
             fill="none"
-            animate={{ d: mood === 'annoyed' ? "M 40 75 Q 50 65 60 75" : 
-                           mood === 'impressed' ? "M 35 70 Q 50 85 65 70" :
-                           mood === 'firm' ? "M 40 72 L 60 72" :
-                           "M 40 70 Q 50 78 60 70" }}
           />
 
           {/* Sparkles for Impressed */}
           {mood === 'impressed' && (
-            <motion.g initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+            <g>
               <circle cx="20" cy="20" r="2" fill="white" />
               <circle cx="85" cy="30" r="1.5" fill="white" />
-            </motion.g>
+            </g>
           )}
         </svg>
       </motion.div>
@@ -119,4 +109,5 @@ export const RajeshAvatar: React.FC<RajeshAvatarProps> = ({ mood, className, isT
       )}
     </div>
   );
-};
+});
+RajeshAvatar.displayName = 'RajeshAvatar';

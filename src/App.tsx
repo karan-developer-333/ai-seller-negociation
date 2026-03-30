@@ -16,8 +16,19 @@ import ReactMarkdown from 'react-markdown';
 import confetti from 'canvas-confetti';
 import { cn } from './lib/utils';
 import { Message, NegotiationState, Product, LeaderboardEntry } from './types';
-import { getSellerResponseStream } from './services/geminiService';
+import { getSellerResponseStream } from './services/mistralService';
 import { RajeshAvatar } from './components/RajeshAvatar';
+import { auth, db } from './firebase';
+import { signInAnonymously, onAuthStateChanged } from 'firebase/auth';
+import { 
+  collection, 
+  addDoc, 
+  query, 
+  orderBy, 
+  limit, 
+  onSnapshot,
+  Timestamp 
+} from 'firebase/firestore';
 
 const PRODUCT: Product = {
   id: 'royal-enfield',
@@ -56,20 +67,50 @@ export default function App() {
   const [isGameStarted, setIsGameStarted] = useState(false);
   const [hasApiKey, setHasApiKey] = useState(true);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [userId, setUserId] = useState<string | null>(null);
   
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  // Initialize Firebase Auth
   useEffect(() => {
-    const saved = localStorage.getItem('negotiation-leaderboard');
-    if (saved) setLeaderboard(JSON.parse(saved));
-    
-    // Check if API key is selected
-    const aiStudio = (window as any).aistudio;
-    if (aiStudio?.hasSelectedApiKey) {
-      aiStudio.hasSelectedApiKey().then((hasKey: boolean) => {
-        setHasApiKey(hasKey);
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        setUserId(user.uid);
+      } else {
+        signInAnonymously(auth).catch(console.error);
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Real-time Leaderboard from Firebase
+  useEffect(() => {
+    const q = query(
+      collection(db, 'leaderboard'),
+      orderBy('price', 'asc'),
+      limit(10)
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const entries = snapshot.docs.map(doc => {
+        const data = doc.data();
+        return {
+          ...data,
+          date: data.date instanceof Timestamp ? data.date.toDate().toLocaleDateString() : data.date
+        } as LeaderboardEntry;
       });
-    }
+      setLeaderboard(entries);
+    }, (error) => {
+      console.error("Leaderboard fetch error:", error);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    // Check if Mistral API key is set in environment (server-side)
+    // For client-side check, we rely on the error from the service
+    setHasApiKey(true); 
   }, []);
 
   const handleSelectKey = async () => {
@@ -86,7 +127,7 @@ export default function App() {
     }
   }, [state.history, streamingMessage]);
 
-  const parseMetadata = (text: string) => {
+  const parseMetadata = React.useCallback((text: string) => {
     const moodMatch = text.match(/MOOD:\s*(\w+)/i);
     const priceMatch = text.match(/PRICE:\s*(\d+)/i);
     const dealMatch = text.match(/DEAL:\s*(true|false)/i);
@@ -98,9 +139,25 @@ export default function App() {
       isDealAccepted: dealMatch ? dealMatch[1].toLowerCase() === 'true' : false,
       verbalResponse: textMatch ? textMatch[1].trim() : ''
     };
-  };
+  }, [state.currentPrice]);
 
-  const handleSend = async () => {
+  const saveToLeaderboard = React.useCallback(async (finalPrice: number) => {
+    if (!userId) return;
+    
+    try {
+      const entry = {
+        name: userName || 'Anonymous Negotiator',
+        price: finalPrice,
+        date: Timestamp.now(),
+        uid: userId
+      };
+      await addDoc(collection(db, 'leaderboard'), entry);
+    } catch (error) {
+      console.error('Error saving to leaderboard:', error);
+    }
+  }, [userId, userName]);
+
+  const handleSend = React.useCallback(async () => {
     if (!input.trim() || isLoading || state.isGameOver) return;
 
     const userMessage: Message = { role: 'user', text: input };
@@ -113,12 +170,15 @@ export default function App() {
     try {
       const stream = getSellerResponseStream(newHistory, state.product);
       let accumulated = '';
-      let isPermissionError = false;
       
       for await (const chunk of stream) {
-        if (chunk === "ERROR_PERMISSION_DENIED") {
-          isPermissionError = true;
-          break;
+        if (chunk === "ERROR_MISTRAL_KEY_MISSING") {
+          setHasApiKey(false);
+          setIsLoading(false);
+          return;
+        }
+        if (chunk === "ERROR_MISTRAL_API_FAILED") {
+          throw new Error("Mistral API failed");
         }
         accumulated += chunk;
         const parsed = parseMetadata(accumulated);
@@ -128,13 +188,6 @@ export default function App() {
         }
         
         setStreamingMessage(parsed.verbalResponse || '...');
-      }
-
-      if (isPermissionError) {
-        setHasApiKey(false);
-        setIsLoading(false);
-        setStreamingMessage('');
-        return;
       }
 
       const finalParsed = parseMetadata(accumulated);
@@ -171,20 +224,7 @@ export default function App() {
     } finally {
       setIsLoading(false);
     }
-  };
-
-  const saveToLeaderboard = (finalPrice: number) => {
-    const entry: LeaderboardEntry = {
-      name: userName || 'Anonymous Negotiator',
-      price: finalPrice,
-      date: new Date().toLocaleDateString()
-    };
-    const newLeaderboard = [...leaderboard, entry]
-      .sort((a, b) => a.price - b.price)
-      .slice(0, 10);
-    setLeaderboard(newLeaderboard);
-    localStorage.setItem('negotiation-leaderboard', JSON.stringify(newLeaderboard));
-  };
+  }, [input, isLoading, state, parseMetadata, currentMood, saveToLeaderboard]);
 
   const resetGame = () => {
     setState(INITIAL_STATE);
@@ -428,13 +468,10 @@ export default function App() {
                 <AlertCircle size={20} />
                 <span className="font-bold uppercase tracking-widest text-xs md:text-sm">API Key Required</span>
               </div>
-              <p className="text-xs md:text-sm text-platinum/60">To continue the negotiation with Rajesh Bhaiya, please select a valid Gemini API key.</p>
-              <button 
-                onClick={handleSelectKey}
-                className="btn-gold px-6 md:px-8 py-2 md:py-3 rounded-full text-sm"
-              >
-                Select API Key
-              </button>
+              <p className="text-xs md:text-sm text-platinum/60">To continue the negotiation with Rajesh Bhaiya, please ensure the Mistral API key is configured in the environment.</p>
+              <div className="text-[10px] text-platinum/40 bg-white/5 p-2 rounded border border-white/10">
+                Tip: Add MISTRAL_API_KEY to your environment variables.
+              </div>
             </div>
           ) : !state.isGameOver ? (
             <div className="max-w-4xl mx-auto relative">
@@ -507,7 +544,7 @@ export default function App() {
                         <div className="text-[10px] text-platinum/40 uppercase tracking-widest">{entry.date}</div>
                       </div>
                     </div>
-                    <div className="text-xl font-mono text-gold">${entry.price.toLocaleString()}</div>
+                    <div className="text-xl font-mono text-gold">₹{entry.price.toLocaleString()}</div>
                   </div>
                 )) : (
                   <div className="text-center py-12 text-platinum/40">No records yet. Be the first to make a deal.</div>

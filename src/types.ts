@@ -27,4 +27,5 @@ export type LeaderboardEntry = {
   name: string;
   price: number;
   date: string;
+  uid: string;
 };
